@@ -1,0 +1,32 @@
+# Build outputs - never push these
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+
+# iOS/macOS/Windows/Linux - not needed for this project
+ios/
+macos/
+windows/
+linux/
+web/
+
+# Dart/Flutter cache
+.pub-cache/
+.pub/
+
+# Android generated
+android/.gradle/
+android/local.properties
+android/captures/
+*.apk
+*.aab
+
+# OS files
+.DS_Store
+Thumbs.db
