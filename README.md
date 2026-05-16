@@ -242,8 +242,14 @@ dart run flutter_launcher_icons
 If Android keeps showing an old launcher icon:
 
 ```bash
-flutter uninstall
+adb uninstall com.example.ft_hangouts
 flutter run
+```
+
+If `adb` does not find the phone, check the connected device first:
+
+```bash
+adb devices
 ```
 
 ## Testing Checklist
@@ -274,6 +280,6 @@ The app was developed and tested on a physical Xiaomi Android phone using WiFi A
 - Add SMS import conflict handling for edge cases
 - Add search and sorting for larger contact lists
 
-## Author
+## Context
 
 Built as part of the 42 mobile module.
