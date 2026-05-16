@@ -2,35 +2,48 @@
 
 An Android contact and SMS application built with Flutter for the 42 mobile curriculum.
 
-`ft_hangouts` is a compact phonebook app with local contact storage, native Android SMS integration, bilingual UI, lifecycle awareness, and a custom launcher icon. The project focuses on building a real mobile workflow end to end: data modeling, persistence, native platform channels, permissions, localization, responsive layouts, and Android deployment.
+`ft_hangouts` is a mobile contact and messaging app focused on real Android features such as local persistence, SMS handling, localization, permissions, responsive layouts, and Flutter/native integration.
 
-## Highlights
+The project was developed and tested on a physical Android device using Flutter and Kotlin.
 
-- Contact management with create, edit, delete, and list views
-- Local persistence with SQLite through `sqflite`
-- One-to-one chat view for each contact
-- Native SMS sending through a Flutter `MethodChannel`
-- SMS history sync from Android inbox and sent messages
+---
+
+## Features
+
+- Create, edit, delete, and list contacts
+- Local SQLite persistence with `sqflite`
+- One-to-one chat screen for each contact
+- Native Android SMS sending through `MethodChannel`
+- SMS history synchronization from Android inbox and sent messages
 - English and French localization
 - Background timestamp notification when returning to the app
-- Portrait and landscape support with safe-area handling
+- Portrait and landscape support
 - Custom Android launcher icon
 - No external UI component library
 
-## Why This Project Matters
+---
 
-The goal of the 42 `ft_hangouts` project is not only to make a Flutter screen. It is to connect a Flutter UI to real Android capabilities while keeping the app usable, persistent, and maintainable.
+## What I Learned
 
-This implementation demonstrates:
+This project was my first deeper experience with Flutter mobile development and Android native integration.
 
-- Flutter stateful UI and navigation
-- SQLite database design for contacts and messages
-- Dart model mapping between objects and database rows
-- Native Kotlin integration for SMS features
-- Runtime permission handling for Android SMS APIs
-- Localized interface strings with generated Flutter l10n files
-- App lifecycle handling with `WidgetsBindingObserver`
-- Practical mobile debugging on a physical Android device
+The most challenging parts were:
+
+- handling Android SMS permissions correctly
+- integrating Flutter with Kotlin using `MethodChannel`
+- reading SMS history reliably on MIUI/Xiaomi devices
+- managing app lifecycle events
+- keeping the UI responsive in both portrait and landscape
+
+The project also helped me better understand:
+
+- SQLite persistence
+- Flutter localization
+- Android runtime permissions
+- stateful widget lifecycle
+- debugging on a physical Android device
+
+---
 
 ## Tech Stack
 
@@ -45,7 +58,9 @@ This implementation demonstrates:
 | Permissions | Android SMS permissions |
 | Icon generation | `flutter_launcher_icons` |
 
-## Features
+---
+
+## Features Overview
 
 ### Contacts
 
@@ -57,7 +72,14 @@ Contacts are stored locally in SQLite and include:
 - address
 - note
 
-Users can add new contacts, edit existing contacts, delete contacts, and open a chat screen from the contact list.
+Users can:
+
+- add contacts
+- edit contacts
+- delete contacts
+- open a dedicated chat screen
+
+---
 
 ### SMS Chat
 
@@ -67,54 +89,83 @@ Each contact has a conversation screen that combines:
 - SMS messages read from Android inbox
 - SMS messages read from Android sent messages
 
-Sending SMS is handled natively in Kotlin because direct SMS sending is platform-specific. Flutter calls the native layer through:
+SMS sending is handled natively in Kotlin through a Flutter `MethodChannel`.
 
 ```dart
 MethodChannel('com.example.ft_hangouts/sms')
 ```
 
-The Kotlin side handles:
+The Kotlin layer handles:
 
 - `sendSms`
 - `readSms`
 
+---
+
 ### Phone Number Matching
 
-The native SMS reader supports common Moroccan number formats by matching both local and international forms, such as:
+The native SMS reader supports common Moroccan number formats by matching both local and international forms:
 
 ```text
 06XXXXXXXX
 +2126XXXXXXXX
 ```
 
-This makes SMS history sync more reliable when Android stores a number in a different format than the one saved in the contact.
+This helps Android SMS history synchronize correctly even when numbers are stored differently.
 
-### Localization
+---
+
+## Challenges
+
+One challenge during development was SMS synchronization on Xiaomi/MIUI devices.
+
+Some Android distributions restrict SMS broadcast behavior for non-default SMS applications.
+
+To make message history more reliable, the app reads messages directly from:
+
+```text
+content://sms/inbox
+content://sms/sent
+```
+
+and merges them inside the Flutter chat screen.
+
+Another challenge was testing without a working Android emulator because KVM acceleration was unavailable on the development machine. The entire project was developed and debugged on a physical Xiaomi Android device through WiFi ADB.
+
+---
+
+## Localization
 
 The app supports:
 
 - English
 - French
 
-Localization files live in:
+Localization files are located in:
 
 ```text
 lib/l10n/
 ```
 
-Important import path:
+Important Flutter localization import:
 
 ```dart
 import 'package:ft_hangouts/l10n/app_localizations.dart';
 ```
 
-### Background Timestamp
+---
 
-The home screen observes app lifecycle changes.
+## Background Timestamp
 
-When the app goes to the background, it saves the current timestamp with `shared_preferences`.
+The home screen observes app lifecycle changes using:
 
-When the app resumes, it shows a styled floating SnackBar:
+```dart
+WidgetsBindingObserver
+```
+
+When the app goes to the background, the current timestamp is saved with `shared_preferences`.
+
+When the app resumes, the user receives a floating SnackBar:
 
 ```text
 Last seen: 14:32
@@ -123,18 +174,24 @@ Last seen: 14:32
 or in French:
 
 ```text
-Derniere visite : 14:32
+Dernière visite : 14:32
 ```
 
-### Responsive Layout
+---
 
-The main screens use `SafeArea` so content remains visible in portrait and landscape, including on Android devices with gesture navigation or immersive system bars.
+## Responsive Layout
 
-Screens tested:
+The application supports both portrait and landscape orientations.
+
+Main screens use `SafeArea` to keep content visible on Android devices with gesture navigation and immersive system bars.
+
+Tested screens:
 
 - Home screen
 - Contact form
 - Chat screen
+
+---
 
 ## Project Structure
 
@@ -173,6 +230,8 @@ ft_hangouts/
 └── pubspec.lock
 ```
 
+---
+
 ## Data Model
 
 ### Contact
@@ -196,6 +255,8 @@ is_sent    INTEGER NOT NULL
 timestamp  TEXT NOT NULL
 ```
 
+---
+
 ## Android Permissions
 
 The app uses Android SMS permissions:
@@ -206,12 +267,29 @@ The app uses Android SMS permissions:
 <uses-permission android:name="android.permission.READ_SMS"/>
 ```
 
-On some Android distributions, especially MIUI, SMS broadcast receiving may be limited if the app is not the default SMS app. To make the project practical on a real Xiaomi device, the chat screen also reads messages directly from:
+Runtime permissions are requested directly inside the Android native layer before SMS operations are executed.
+
+---
+
+## Screenshots
+
+Add screenshots here after finishing the UI:
 
 ```text
-content://sms/inbox
-content://sms/sent
+screenshots/home.png
+screenshots/chat.png
+screenshots/contact_form.png
 ```
+
+Example section:
+
+```md
+| Home | Chat | Contact Form |
+|---|---|---|
+| ![](screenshots/home.png) | ![](screenshots/chat.png) | ![](screenshots/contact_form.png) |
+```
+
+---
 
 ## Getting Started
 
@@ -221,36 +299,38 @@ Install dependencies:
 flutter pub get
 ```
 
-Run the app:
+Run the application:
 
 ```bash
 flutter run
 ```
 
-Generate localization files if needed:
+Generate localization files:
 
 ```bash
 flutter gen-l10n
 ```
 
-Regenerate Android launcher icons if `assets/launcher_icon.png` changes:
+Regenerate launcher icons after changing the icon asset:
 
 ```bash
 dart run flutter_launcher_icons
 ```
 
-If Android keeps showing an old launcher icon:
+If Android still displays an old launcher icon:
 
 ```bash
 adb uninstall com.example.ft_hangouts
 flutter run
 ```
 
-If `adb` does not find the phone, check the connected device first:
+Verify connected Android devices:
 
 ```bash
 adb devices
 ```
+
+---
 
 ## Testing Checklist
 
@@ -259,26 +339,36 @@ adb devices
 - Delete a contact
 - Open a contact chat
 - Send an SMS
-- Reopen chat and verify message history
-- Rotate the phone on every screen
-- Send the app to background, reopen it, and confirm the last-seen toast appears
-- Switch device language between English and French
-- Confirm Android launcher icon displays correctly
+- Verify SMS history synchronization
+- Rotate the device on every screen
+- Send the app to the background and reopen it
+- Verify the last-seen SnackBar appears
+- Switch between English and French
+- Verify launcher icon generation
 
-## Notes for Reviewers
+---
 
-This repository is intentionally focused on the Android target for the 42 subject. Generated Flutter folders and unused desktop/web platform folders are ignored to keep the submission small and relevant.
+## Notes
 
-The app was developed and tested on a physical Xiaomi Android phone using WiFi ADB, because emulator support was not available in the development environment.
+This repository mainly targets Android because the original 42 subject focuses on Android mobile development.
+
+Generated Flutter folders and unused desktop/web targets are intentionally excluded to keep the repository smaller and focused on the mobile implementation.
+
+The project was developed and tested on a physical Xiaomi Android phone using WiFi ADB.
+
+---
 
 ## Possible Improvements
 
-- Add contact profile pictures
-- Add a direct call action
-- Improve validation messages with full localization
-- Add automated tests around database mapping
-- Add SMS import conflict handling for edge cases
-- Add search and sorting for larger contact lists
+- Contact profile pictures
+- Direct call action
+- Search and sorting
+- Improved validation feedback
+- Automated database tests
+- Better SMS conflict handling
+- UI animations and Material polish
+
+---
 
 ## Context
 
