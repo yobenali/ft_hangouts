@@ -1,0 +1,33 @@
+{
+  "appTitle": "ft_hangouts",
+  "contacts": "Contacts",
+  "newContact": "New Contact",
+  "editContact": "Edit Contact",
+  "save": "Save",
+  "delete": "Delete",
+  "edit": "Edit",
+  "name": "Name",
+  "phone": "Phone",
+  "email": "Email",
+  "address": "Address",
+  "note": "Note",
+  "noContacts": "No contacts yet",
+  "addFirst": "Tap + to add your first contact",
+  "typeMessage": "Type a message...",
+  "noMessages": "No messages yet",
+  "sendFirst": "Send the first message!",
+  "lastSeen": "Last seen: {time}",
+  "@lastSeen": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "deleteConfirm": "Are you sure you want to delete {name}?",
+  "@deleteConfirm": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "cancel": "Cancel",
+  "failedSend": "Failed to send — check SMS permissions"
+}

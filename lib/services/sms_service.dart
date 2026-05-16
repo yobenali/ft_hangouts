@@ -15,21 +15,23 @@ class SmsService {
       });
       return result == 'sent';
     } on PlatformException catch (e) {
-      print('SMS Error: ${e.message}');
+      print('SMS Send Error: ${e.message}');
       return false;
     }
   }
 
-  // Listen for incoming SMS — callback gives sender + body
-  static void listenForIncomingSms({
-    required Function(String sender, String body) onMessage,
-  }) {
-    _channel.setMethodCallHandler((call) async {
-      if (call.method == 'onSmsReceived') {
-        final sender = call.arguments['sender'] as String;
-        final body = call.arguments['body'] as String;
-        onMessage(sender, body);
-      }
-    });
+  // Read all SMS from inbox + sent for a specific phone number
+  static Future<List<Map<String, dynamic>>> readSms({
+    required String phone,
+  }) async {
+    try {
+      final List<dynamic> result = await _channel.invokeMethod('readSms', {
+        'phone': phone,
+      });
+      return result.map((e) => Map<String, dynamic>.from(e)).toList();
+    } on PlatformException catch (e) {
+      print('SMS Read Error: ${e.message}');
+      return [];
+    }
   }
 }

@@ -1,31 +1,44 @@
-# Build outputs - never push these
-build/
+# Flutter / Dart generated files
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
-
-# IDE files
-.idea/
-*.iml
-.vscode/
-
-# iOS/macOS/Windows/Linux - not needed for this project
-ios/
-macos/
-windows/
-linux/
-web/
-
-# Dart/Flutter cache
+.packages
 .pub-cache/
 .pub/
+build/
 
-# Android generated
+# IDE / editor files
+.idea/
+.vscode/
+*.iml
+
+# Platforms not used for this Android-only 42 project
+ios/
+linux/
+macos/
+web/
+windows/
+
+# Android local/generated files
 android/.gradle/
+android/.cxx/
 android/local.properties
 android/captures/
+android/app/src/main/java/
+android/gradle/wrapper/gradle-wrapper.jar
+android/gradlew
+android/gradlew.bat
+
+# Build artifacts
 *.apk
 *.aab
+*.ap_
+*.dex
+*.class
+
+# Local notes / accidental files
+PROJECT_CONTEXT.md
+et HEAD~2
 
 # OS files
 .DS_Store

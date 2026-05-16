@@ -82,6 +82,21 @@ class DatabaseHelper {
 
   // ─── MESSAGE METHODS ───────────────────────────────
 
+
+  Future<bool> messageExists({
+    required int contactId,
+    required String body,
+    required String timestamp,
+  }) async {
+    final db = await database;
+    final result = await db.query(
+      'messages',
+      where: 'contact_id = ? AND body = ? AND timestamp = ?',
+      whereArgs: [contactId, body, timestamp],
+    );
+    return result.isNotEmpty;
+  }
+  
   Future<int> insertMessage(Message message) async {
     final db = await database;
     return await db.insert('messages', message.toMap());

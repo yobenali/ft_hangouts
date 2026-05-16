@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import '../services/sms_service.dart';
 import '../database/db_helper.dart';
 import '../models/contact.dart';
 import '../models/message.dart';
+import '../services/sms_service.dart';
+import 'package:ft_hangouts/l10n/app_localizations.dart';
 
 class ChatScreen extends StatefulWidget {
   final Contact contact;
@@ -31,15 +32,45 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  // Load messages for this contact from SQLite
+  // Load messages — combines SQLite + real SMS inbox
   void _loadMessages() async {
-    final msgs = await DatabaseHelper.instance
-        .getMessages(widget.contact.id!);
+    // Step 1: read real SMS from Android inbox
+    final smsList = await SmsService.readSms(phone: widget.contact.phone);
+
+    // Step 2: sync them into our SQLite DB
+    for (final sms in smsList) {
+      final body = sms['body'] as String;
+      final isSent = sms['isSent'] as int;
+      final date = sms['date'] as int;
+      final timestamp = DateTime.fromMillisecondsSinceEpoch(
+        date,
+      ).toIso8601String();
+
+      // Check if this message already exists in DB
+      final exists = await DatabaseHelper.instance.messageExists(
+        contactId: widget.contact.id!,
+        body: body,
+        timestamp: timestamp,
+      );
+
+      if (!exists) {
+        await DatabaseHelper.instance.insertMessage(
+          Message(
+            contactId: widget.contact.id!,
+            body: body,
+            isSent: isSent,
+            timestamp: timestamp,
+          ),
+        );
+      }
+    }
+
+    // Step 3: load all messages from DB for display
+    final msgs = await DatabaseHelper.instance.getMessages(widget.contact.id!);
     setState(() => _messages = msgs);
     _scrollToBottom();
   }
 
-  // Scroll to the latest message
   void _scrollToBottom() {
     Future.delayed(Duration(milliseconds: 300), () {
       if (_scrollController.hasClients) {
@@ -52,7 +83,6 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  // Send SMS and save to DB
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
@@ -78,7 +108,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to send — grant SMS permission and try again'),
+          content: Text('Failed to send — check SMS permissions'),
           backgroundColor: Colors.red,
         ),
       );
@@ -87,7 +117,6 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _sending = false);
   }
 
-  // Format timestamp for display
   String _formatTime(String timestamp) {
     final dt = DateTime.parse(timestamp);
     final hour = dt.hour.toString().padLeft(2, '0');
@@ -113,10 +142,7 @@ class _ChatScreenState extends State<ChatScreen> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  widget.contact.name,
-                  style: TextStyle(fontSize: 16),
-                ),
+                Text(widget.contact.name, style: TextStyle(fontSize: 16)),
                 Text(
                   widget.contact.phone,
                   style: TextStyle(fontSize: 11, color: Colors.white70),
@@ -128,102 +154,104 @@ class _ChatScreenState extends State<ChatScreen> {
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
       ),
-
-      body: Column(
-        children: [
-          // ── Message List ──────────────────────────────
-          Expanded(
-            child: _messages.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.chat_bubble_outline,
-                            size: 60, color: Colors.grey),
-                        SizedBox(height: 12),
-                        Text('No messages yet',
-                            style: TextStyle(color: Colors.grey)),
-                        Text('Send the first message!',
-                            style: TextStyle(color: Colors.grey)),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: EdgeInsets.all(12),
-                    itemCount: _messages.length,
-                    itemBuilder: (_, i) {
-                      final msg = _messages[i];
-                      final isSent = msg.isSent == 1;
-                      return _buildBubble(msg, isSent);
-                    },
-                  ),
-          ),
-
-          // ── Input Bar ─────────────────────────────────
-          Container(
-            padding: EdgeInsets.fromLTRB(
-              12,
-              8,
-              12,
-              MediaQuery.of(context).padding.bottom + 8,
-            ),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 4,
-                  offset: Offset(0, -2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                // Text input
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: InputDecoration(
-                      hintText: 'Type a message...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: RepaintBoundary(
+                child: _messages.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.chat_bubble_outline,
+                              size: 60,
+                              color: Colors.grey,
+                            ),
+                            SizedBox(height: 12),
+                            Text(
+                              'No messages yet',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                            Text(
+                              'Send the first message!',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: EdgeInsets.all(12),
+                        itemCount: _messages.length,
+                        itemBuilder: (_, i) {
+                          final msg = _messages[i];
+                          final isSent = msg.isSent == 1;
+                          return _buildBubble(msg, isSent);
+                        },
                       ),
-                      filled: true,
-                      fillColor: Colors.grey[100],
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                    ),
-                    onSubmitted: (_) => _sendMessage(),
+              ),
+            ),
+            Container(
+              padding: EdgeInsets.fromLTRB(12, 8, 12, 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 4,
+                    offset: Offset(0, -2),
                   ),
-                ),
-                SizedBox(width: 8),
-                // Send button
-                _sending
-                    ? CircularProgressIndicator()
-                    : CircleAvatar(
-                        backgroundColor: Colors.indigo,
-                        child: IconButton(
-                          icon: Icon(Icons.send, color: Colors.white, size: 18),
-                          onPressed: _sendMessage,
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        hintText: AppLocalizations.of(context)!.typeMessage,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: Colors.grey[100],
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
                         ),
                       ),
-              ],
+                      onSubmitted: (_) => _sendMessage(),
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  _sending
+                      ? CircularProgressIndicator()
+                      : CircleAvatar(
+                          backgroundColor: Colors.indigo,
+                          child: IconButton(
+                            icon: Icon(
+                              Icons.send,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            onPressed: _sendMessage,
+                          ),
+                        ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  // Build a single message bubble
   Widget _buildBubble(Message msg, bool isSent) {
     return Align(
-      // Sent = right side, Received = left side
       alignment: isSent ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: EdgeInsets.only(
@@ -243,8 +271,9 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         child: Column(
-          crossAxisAlignment:
-              isSent ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: isSent
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           children: [
             Text(
               msg.body,
