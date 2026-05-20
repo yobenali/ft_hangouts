@@ -1,13 +1,18 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:ft_hangouts/l10n/app_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import '../database/db_helper.dart';
 import '../models/contact.dart';
+import '../models/message.dart';
+import '../services/sms_service.dart';
 import 'contact_form.dart';
 import 'chat_screen.dart';
 
 class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -15,16 +20,22 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<Contact> _contacts = [];
   Color _headerColor = Colors.indigo;
+  Timer? _smsTimer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadContacts();
+    // Check for new SMS from unknown numbers every 10 seconds
+    _smsTimer = Timer.periodic(Duration(seconds: 10), (_) {
+      _checkForUnknownSenders();
+    });
   }
 
   @override
   void dispose() {
+    _smsTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -34,9 +45,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused) {
       _saveLastSeen();
     }
-
     if (state == AppLifecycleState.resumed) {
       _showLastSeen();
+      _loadContacts();
+      _checkForUnknownSenders();
     }
   }
 
@@ -48,15 +60,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _showLastSeen() async {
     final prefs = await SharedPreferences.getInstance();
     final savedTime = prefs.getString('last_seen');
-
     if (savedTime == null || !mounted) return;
-
-    final dateTime = DateTime.parse(savedTime);
+    final dt = DateTime.parse(savedTime);
     final time =
-        '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
-
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     final l10n = AppLocalizations.of(context)!;
-
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -96,6 +104,61 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
         ),
       );
+  }
+
+  // Check inbox for SMS from unknown numbers — auto-create contact
+  Future<void> _checkForUnknownSenders() async {
+    // Only look at SMS received in the last 24 hours
+    final cutoff = DateTime.now()
+        .subtract(Duration(hours: 24))
+        .millisecondsSinceEpoch;
+
+    final allMessages = await SmsService.readAllInbox();
+    bool newContactCreated = false;
+
+    for (final sms in allMessages) {
+      final date = sms['date'] as int? ?? 0;
+      if (date < cutoff) continue; // skip old messages
+
+      final sender = sms['address'] as String? ?? '';
+      if (sender.isEmpty) continue;
+
+      // Skip shortcodes like "FACEBOOK", "BANK", etc.
+      // Real phone numbers have at least 7 digits
+      final digitsOnly = sender.replaceAll(RegExp(r'\D'), '');
+      if (digitsOnly.length < 7) continue;
+
+      // Check if contact already exists
+      final existing =
+          await DatabaseHelper.instance.findContactByPhone(sender);
+      if (existing != null) continue; // already known
+
+      // Unknown sender — create contact with number as name
+      final newId = await DatabaseHelper.instance.insertContact(
+        Contact(name: sender, phone: sender),
+      );
+
+      // Save the message linked to new contact
+      final body = sms['body'] as String? ?? '';
+      final timestamp =
+          DateTime.fromMillisecondsSinceEpoch(date).toIso8601String();
+
+      await DatabaseHelper.instance.insertMessage(
+        Message(
+          contactId: newId,
+          body: body,
+          isSent: 0,
+          timestamp: timestamp,
+        ),
+      );
+
+      newContactCreated = true;
+    }
+
+    // Refresh contact list if new contacts were created
+    if (newContactCreated && mounted) {
+      _loadContacts();
+    }
   }
 
   void _loadContacts() async {
@@ -171,7 +234,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       style: TextStyle(color: Colors.grey, fontSize: 18),
                     ),
                     SizedBox(height: 8),
-                    Text(l10n.addFirst, style: TextStyle(color: Colors.grey)),
+                    Text(
+                      l10n.addFirst,
+                      style: TextStyle(color: Colors.grey),
+                    ),
                   ],
                 ),
               )
@@ -180,14 +246,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 itemBuilder: (_, i) {
                   final contact = _contacts[i];
                   return Card(
-                    margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    margin:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     child: ListTile(
                       leading: CircleAvatar(
                         backgroundColor: _headerColor,
-                        child: Text(
-                          contact.name[0].toUpperCase(),
-                          style: TextStyle(color: Colors.white),
-                        ),
+                        backgroundImage: contact.photoPath != null
+                            ? FileImage(File(contact.photoPath!))
+                            : null,
+                        child: contact.photoPath == null
+                            ? Text(
+                                contact.name[0].toUpperCase(),
+                                style: TextStyle(color: Colors.white),
+                              )
+                            : null,
                       ),
                       title: Text(contact.name),
                       subtitle: Text(contact.phone),

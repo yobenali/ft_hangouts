@@ -52,98 +52,116 @@ class MainActivity : FlutterActivity() {
                     // ── Read SMS from inbox for a contact ─────────
                     "readSms" -> {
                         val phone = call.argument<String>("phone") ?: ""
-
                         if (ContextCompat.checkSelfPermission(
                                 this, Manifest.permission.READ_SMS
                             ) != PackageManager.PERMISSION_GRANTED
                         ) {
                             ActivityCompat.requestPermissions(
-                                this,
-                                arrayOf(Manifest.permission.READ_SMS),
-                                102
+                                this, arrayOf(Manifest.permission.READ_SMS), 102
                             )
                             result.error("NO_PERMISSION", "Read SMS permission not granted", null)
                             return@setMethodCallHandler
                         }
-
                         try {
                             val messages = mutableListOf<Map<String, Any>>()
-                            // ── Read RECEIVED messages (inbox) ────
-                            val inboxUri = Uri.parse("content://sms/inbox")
 
-                            // Clean phone number — remove spaces, dashes
-                            val cleanPhone = phone.replace(" ", "").replace("-", "")
+                            // Build all possible formats of this number
+                            val clean = phone.trim().replace(" ", "").replace("-", "")
+                            val variants = mutableSetOf<String>()
+                            variants.add(clean)
 
-                            // Try both formats: with and without country code
-                            val localPhone = if (cleanPhone.startsWith("+212")) 
-                                "0" + cleanPhone.substring(4) 
-                                else cleanPhone
-                            val intlPhone = if (cleanPhone.startsWith("0")) 
-                                "+212" + cleanPhone.substring(1) 
-                                else cleanPhone
+                            // +212XXXXXXXXX → 0XXXXXXXXX
+                            if (clean.startsWith("+212")) {
+                                variants.add("0" + clean.substring(4))
+                            }
+                            // 06XXXXXXXX or 07XXXXXXXX → +212 6XXXXXXXX or +212 7XXXXXXXX
+                            if (clean.startsWith("0") && clean.length >= 9) {
+                                variants.add("+212" + clean.substring(1))
+                                variants.add("+212 " + clean.substring(1))
+                            }
+                            // Also try without leading zero: 6XXXXXXXX
+                            if (clean.startsWith("0")) {
+                                variants.add(clean.substring(1))
+                            }
+
+                            val placeholders = variants.joinToString(" OR ") { "address = ?" }
+                            val args = variants.toTypedArray()
 
                             val inboxCursor: Cursor? = contentResolver.query(
-                                inboxUri,
+                                Uri.parse("content://sms/inbox"),
                                 arrayOf("address", "body", "date"),
-                                "address = ? OR address = ? OR address = ?",
-                                arrayOf(cleanPhone, localPhone, intlPhone),
+                                placeholders,
+                                args,
                                 "date ASC"
                             )
-                            // // ── Read RECEIVED messages (inbox) ────
-                            // val inboxUri = Uri.parse("content://sms/inbox")
-                            // val inboxCursor: Cursor? = contentResolver.query(
-                            //     inboxUri,
-                            //     arrayOf("address", "body", "date"),
-                            //     "address = ?",
-                            //     arrayOf(phone),
-                            //     "date ASC"
-                            // )
-                            // inboxCursor?.use { cursor ->
-                            //     while (cursor.moveToNext()) {
-                            //         val address = cursor.getString(0) ?: ""
-                            //         val body = cursor.getString(1) ?: ""
-                            //         val date = cursor.getLong(2)
-                            //         messages.add(mapOf(
-                            //             "address" to address,
-                            //             "body" to body,
-                            //             "date" to date,
-                            //             "isSent" to 0
-                            //         ))
-                            //     }
-                            // }
+                            inboxCursor?.use { cursor ->
+                                while (cursor.moveToNext()) {
+                                    messages.add(mapOf(
+                                        "address" to (cursor.getString(0) ?: ""),
+                                        "body" to (cursor.getString(1) ?: ""),
+                                        "date" to cursor.getLong(2),
+                                        "isSent" to 0
+                                    ))
+                                }
+                            }
 
-                            // ── Read SENT messages ─────────────────
-                            val sentUri = Uri.parse("content://sms/sent")
                             val sentCursor: Cursor? = contentResolver.query(
-                                sentUri,
+                                Uri.parse("content://sms/sent"),
                                 arrayOf("address", "body", "date"),
-                                "address = ?",
-                                arrayOf(phone),
+                                placeholders,
+                                args,
                                 "date ASC"
                             )
                             sentCursor?.use { cursor ->
                                 while (cursor.moveToNext()) {
-                                    val address = cursor.getString(0) ?: ""
-                                    val body = cursor.getString(1) ?: ""
-                                    val date = cursor.getLong(2)
                                     messages.add(mapOf(
-                                        "address" to address,
-                                        "body" to body,
-                                        "date" to date,
+                                        "address" to (cursor.getString(0) ?: ""),
+                                        "body" to (cursor.getString(1) ?: ""),
+                                        "date" to cursor.getLong(2),
                                         "isSent" to 1
                                     ))
                                 }
                             }
 
-                            // Sort all messages by date
-                            val sorted = messages.sortedBy { it["date"] as Long }
-                            result.success(sorted)
-
+                            result.success(messages.sortedBy { it["date"] as Long })
                         } catch (e: Exception) {
                             result.error("READ_FAILED", e.message, null)
                         }
                     }
-
+                    "readAllInbox" -> {
+                        if (ContextCompat.checkSelfPermission(
+                                this, Manifest.permission.READ_SMS
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            result.error("NO_PERMISSION", "Read SMS permission not granted", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val messages = mutableListOf<Map<String, Any>>()
+                            val inboxCursor: Cursor? = contentResolver.query(
+                                Uri.parse("content://sms/inbox"),
+                                arrayOf("address", "body", "date"),
+                                null, null,
+                                "date DESC"
+                            )
+                            inboxCursor?.use { cursor ->
+                                // Only read last 100 messages to avoid performance issues
+                                var count = 0
+                                while (cursor.moveToNext() && count < 100) {
+                                    messages.add(mapOf(
+                                        "address" to (cursor.getString(0) ?: ""),
+                                        "body" to (cursor.getString(1) ?: ""),
+                                        "date" to cursor.getLong(2),
+                                        "isSent" to 0
+                                    ))
+                                    count++
+                                }
+                            }
+                            result.success(messages)
+                        } catch (e: Exception) {
+                            result.error("READ_FAILED", e.message, null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }

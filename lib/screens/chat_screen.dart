@@ -1,13 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../database/db_helper.dart';
 import '../models/contact.dart';
 import '../models/message.dart';
 import '../services/sms_service.dart';
 import 'package:ft_hangouts/l10n/app_localizations.dart';
+import 'dart:io';
 
 class ChatScreen extends StatefulWidget {
   final Contact contact;
-  ChatScreen({required this.contact});
+  const ChatScreen({super.key, required this.contact});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -18,38 +20,46 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scrollController = ScrollController();
   List<Message> _messages = [];
   bool _sending = false;
+  Timer? _refreshTimer;
+  int _lastMessageCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadMessages();
+    _initialLoad();
+    _refreshTimer = Timer.periodic(Duration(seconds: 5), (_) {
+      _checkForNewMessages();
+    });
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  // Load messages — combines SQLite + real SMS inbox
-  void _loadMessages() async {
-    // Step 1: read real SMS from Android inbox
-    final smsList = await SmsService.readSms(phone: widget.contact.phone);
+  // Called ONCE on open — syncs inbox then loads DB
+  Future<void> _initialLoad() async {
+    await _syncFromInbox();
+    await _refreshFromDb();
+  }
 
-    // Step 2: sync them into our SQLite DB
+  // Sync SMS inbox into SQLite with proper deduplication
+  Future<void> _syncFromInbox() async {
+    final smsList = await SmsService.readSms(phone: widget.contact.phone);
     for (final sms in smsList) {
       final body = sms['body'] as String;
       final isSent = sms['isSent'] as int;
       final date = sms['date'] as int;
-      final timestamp = DateTime.fromMillisecondsSinceEpoch(
-        date,
-      ).toIso8601String();
+      final timestamp =
+          DateTime.fromMillisecondsSinceEpoch(date).toIso8601String();
 
-      // Check if this message already exists in DB
       final exists = await DatabaseHelper.instance.messageExists(
         contactId: widget.contact.id!,
         body: body,
+        isSent: isSent,
         timestamp: timestamp,
       );
 
@@ -64,11 +74,33 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     }
+  }
 
-    // Step 3: load all messages from DB for display
-    final msgs = await DatabaseHelper.instance.getMessages(widget.contact.id!);
+  // Read from DB only — no inbox sync, no flicker
+  Future<void> _refreshFromDb() async {
+    final msgs =
+        await DatabaseHelper.instance.getMessages(widget.contact.id!);
+    if (!mounted) return;
     setState(() => _messages = msgs);
-    _scrollToBottom();
+    if (msgs.length > _lastMessageCount) {
+      _lastMessageCount = msgs.length;
+      _scrollToBottom();
+    }
+    _lastMessageCount = msgs.length;
+  }
+
+  // Called every 5s — only updates UI if something changed
+  Future<void> _checkForNewMessages() async {
+    final before = _messages.length;
+    await _syncFromInbox();
+    final msgs =
+        await DatabaseHelper.instance.getMessages(widget.contact.id!);
+    if (!mounted) return;
+    if (msgs.length != before) {
+      setState(() => _messages = msgs);
+      _scrollToBottom();
+      _lastMessageCount = msgs.length;
+    }
   }
 
   void _scrollToBottom() {
@@ -95,6 +127,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     if (success) {
+      // Save directly to DB — never re-synced from inbox
       await DatabaseHelper.instance.insertMessage(
         Message(
           contactId: widget.contact.id!,
@@ -104,14 +137,16 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
       _controller.clear();
-      _loadMessages();
+      await _refreshFromDb();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to send — check SMS permissions'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.failedSend),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
 
     setState(() => _sending = false);
@@ -119,13 +154,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   String _formatTime(String timestamp) {
     final dt = DateTime.parse(timestamp);
-    final hour = dt.hour.toString().padLeft(2, '0');
-    final min = dt.minute.toString().padLeft(2, '0');
-    return '$hour:$min';
+    return '${dt.hour.toString().padLeft(2, '0')}:'
+        '${dt.minute.toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -133,16 +168,24 @@ class _ChatScreenState extends State<ChatScreen> {
             CircleAvatar(
               backgroundColor: Colors.indigo,
               radius: 18,
-              child: Text(
-                widget.contact.name[0].toUpperCase(),
-                style: TextStyle(color: Colors.white, fontSize: 16),
-              ),
+              backgroundImage: widget.contact.photoPath != null
+                  ? FileImage(File(widget.contact.photoPath!))
+                  : null,
+              child: widget.contact.photoPath == null
+                  ? Text(
+                      widget.contact.name[0].toUpperCase(),
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                    )
+                  : null,
             ),
             SizedBox(width: 10),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.contact.name, style: TextStyle(fontSize: 16)),
+                Text(
+                  widget.contact.name,
+                  style: TextStyle(fontSize: 16),
+                ),
                 Text(
                   widget.contact.phone,
                   style: TextStyle(fontSize: 11, color: Colors.white70),
@@ -157,6 +200,7 @@ class _ChatScreenState extends State<ChatScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // ── Message List ─────────────────────────────
             Expanded(
               child: RepaintBoundary(
                 child: _messages.isEmpty
@@ -171,11 +215,11 @@ class _ChatScreenState extends State<ChatScreen> {
                             ),
                             SizedBox(height: 12),
                             Text(
-                              'No messages yet',
+                              l10n.noMessages,
                               style: TextStyle(color: Colors.grey),
                             ),
                             Text(
-                              'Send the first message!',
+                              l10n.sendFirst,
                               style: TextStyle(color: Colors.grey),
                             ),
                           ],
@@ -193,6 +237,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
               ),
             ),
+
+            // ── Input Bar ────────────────────────────────
             Container(
               padding: EdgeInsets.fromLTRB(12, 8, 12, 8),
               decoration: BoxDecoration(
@@ -212,7 +258,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       controller: _controller,
                       textCapitalization: TextCapitalization.sentences,
                       decoration: InputDecoration(
-                        hintText: AppLocalizations.of(context)!.typeMessage,
+                        hintText: l10n.typeMessage,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
                           borderSide: BorderSide.none,
@@ -266,8 +312,10 @@ class _ChatScreenState extends State<ChatScreen> {
           borderRadius: BorderRadius.only(
             topLeft: Radius.circular(16),
             topRight: Radius.circular(16),
-            bottomLeft: isSent ? Radius.circular(16) : Radius.circular(4),
-            bottomRight: isSent ? Radius.circular(4) : Radius.circular(16),
+            bottomLeft:
+                isSent ? Radius.circular(16) : Radius.circular(4),
+            bottomRight:
+                isSent ? Radius.circular(4) : Radius.circular(16),
           ),
         ),
         child: Column(

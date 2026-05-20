@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:ft_hangouts/l10n/app_localizations.dart';
 import '../database/db_helper.dart';
@@ -5,7 +7,7 @@ import '../models/contact.dart';
 
 class ContactForm extends StatefulWidget {
   final Contact? contact;
-  ContactForm({this.contact});
+  const ContactForm({super.key, this.contact});
 
   @override
   State<ContactForm> createState() => _ContactFormState();
@@ -18,6 +20,8 @@ class _ContactFormState extends State<ContactForm> {
   final _emailCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
+  String? _photoPath;
+  final _picker = ImagePicker();
 
   bool get _isEditing => widget.contact != null;
 
@@ -30,6 +34,7 @@ class _ContactFormState extends State<ContactForm> {
       _emailCtrl.text = widget.contact!.email;
       _addressCtrl.text = widget.contact!.address;
       _noteCtrl.text = widget.contact!.note;
+      _photoPath = widget.contact!.photoPath;
     }
   }
 
@@ -42,6 +47,18 @@ class _ContactFormState extends State<ContactForm> {
     _noteCtrl.dispose();
     super.dispose();
   }
+  
+  Future<void> _pickPhoto() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 80,
+    );
+    if (picked != null) {
+      setState(() => _photoPath = picked.path);
+    }
+  }
 
   void _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -51,14 +68,15 @@ class _ContactFormState extends State<ContactForm> {
       email: _emailCtrl.text.trim(),
       address: _addressCtrl.text.trim(),
       note: _noteCtrl.text.trim(),
+      photoPath: _photoPath,
     );
     if (_isEditing) {
-      await DatabaseHelper.instance.updateContact(
-        contact.copyWith(id: widget.contact!.id),
-      );
+      await DatabaseHelper.instance
+          .updateContact(contact.copyWith(id: widget.contact!.id));
     } else {
       await DatabaseHelper.instance.insertContact(contact);
     }
+    if (!mounted) return;  // ← add this line
     Navigator.pop(context, true);
   }
 
@@ -76,18 +94,31 @@ class _ContactFormState extends State<ContactForm> {
             padding: EdgeInsets.all(16),
             children: [
               Center(
-                child: CircleAvatar(
-                  radius: 40,
-                  backgroundColor: Colors.indigo,
-                  child: Text(
-                    _nameCtrl.text.isNotEmpty
-                        ? _nameCtrl.text[0].toUpperCase()
-                        : '?',
-                    style: TextStyle(fontSize: 36, color: Colors.white),
+                child: GestureDetector(
+                  onTap: _pickPhoto,
+                  child: CircleAvatar(
+                    radius: 48,
+                    backgroundColor: Colors.indigo,
+                    backgroundImage: _photoPath != null
+                        ? FileImage(File(_photoPath!))
+                        : null,
+                    child: _photoPath == null
+                        ? Text(
+                            _nameCtrl.text.isNotEmpty
+                                ? _nameCtrl.text[0].toUpperCase()
+                                : '?',
+                            style: TextStyle(fontSize: 36, color: Colors.white),
+                          )
+                        : null,
                   ),
                 ),
               ),
-              SizedBox(height: 24),
+              SizedBox(height: 8),
+              Text(
+                'Tap to change photo',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+              SizedBox(height: 16),
               _buildField(
                 controller: _nameCtrl,
                 label: l10n.name,
@@ -102,11 +133,13 @@ class _ContactFormState extends State<ContactForm> {
                 required: true,
                 keyboardType: TextInputType.phone,
                 validator: (value) {
-                  if (value == null || value.trim().isEmpty)
+                  if (value == null || value.trim().isEmpty) {
                     return '${l10n.phone} is required';
+                  }
                   final phoneRegex = RegExp(r'^[+\d\s\-()]+$');
-                  if (!phoneRegex.hasMatch(value.trim()))
+                  if (!phoneRegex.hasMatch(value.trim())) {
                     return 'Enter a valid phone number';
+                  }
                   if (value.trim().length < 6) return 'Phone number too short';
                   return null;
                 },
@@ -119,8 +152,9 @@ class _ContactFormState extends State<ContactForm> {
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) return null;
                   final emailRegex = RegExp(r'^[\w\.-]+@[\w\.-]+\.\w{2,}$');
-                  if (!emailRegex.hasMatch(value.trim()))
+                  if (!emailRegex.hasMatch(value.trim())) {
                     return 'Enter a valid email';
+                  }
                   return null;
                 },
               ),
@@ -180,8 +214,9 @@ class _ContactFormState extends State<ContactForm> {
             validator ??
             (required
                 ? (value) {
-                    if (value == null || value.trim().isEmpty)
+                    if (value == null || value.trim().isEmpty) {
                       return '$label is required';
+                    }
                     return null;
                   }
                 : null),
